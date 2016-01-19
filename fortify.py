@@ -48,6 +48,12 @@ else:
 if args.verbose:
 	isVerbose=True
 sourcePath = args.source
+if not sourcePath.endswith("/"):
+	sourcePath = sourcePath + "/"
+if not os.path.isdir(sourcePath):
+	print sourcePath + " is not a valid directory."
+	sys.exit()
+
 if args.memory:
 	maxmem = args.memory
 else:
@@ -96,6 +102,7 @@ if hasExcludes:
 
 	#out=check_output([test])
 	try:
+		print command
 		out = check_output(command)
 	except:
 		print "Could not translate build. SOmething is wrong"
@@ -103,6 +110,7 @@ if hasExcludes:
 else:
 	command = ["sourceanalyzer","-b",buildName,sourcePath,maxmem]
 	try:
+		print command
 		out = check_output(command)
 	except:
 		print "Could not translate build. SOmething is wrong"
