@@ -1,32 +1,58 @@
 from subprocess import check_output
-import argparse
 import sys, os
 
 
 
-#OPTION PARSER
-parser = argparse.ArgumentParser()
-parser.add_argument("-s", "--source",help="Path to the root of the source code to be scanned")
-parser.add_argument("-e","--exclude",help="File: list of excludes (one per line)")
-parser.add_argument("-v","--verbose",help="Turn on verbosity", action="store_true")
-parser.add_argument("-u","-url","--url",help="The url for the cloud scan controller")
-parser.add_argument("-n","--name",help="Name of the project")
-parser.add_argument("-q","--quiet",help="Name of the project")
-parser.add_argument("-m","--memory",help="Max memory to be used for translation (DEFAULT is 2G)")
-parser.add_argument("-upload","--upload",help="Do you want to upload the fpr to the SSC",action="store_true")
-parser.add_argument("-sscurl","--sscurl",help="URL of the SSC server (required if you choose the -upload option")
-parser.add_argument("-sscuser","--sscuser",help="Username for the SSC server (required if you choose the -upload option")
-parser.add_argument("-sscpass","--sscpass",help="Password for the SSC server (required if you choose the -upload option")
-parser.add_argument("-sscproject","--sscproject",help="Exact(case sensitive) project name for the SSC server (required if you choose the -upload option")
-parser.add_argument("-sscversion","--sscversion",help="Exact(case sensitive) version name for the SSC server (required if you choose the -upload option")
-args=parser.parse_args()
-
 def getArgs():
+	import argparse
+	#OPTION PARSER
+	parser = argparse.ArgumentParser()
+	parser.add_argument("-source", "--source",help="Path to the root of the source code to be scanned")
+	parser.add_argument("-exclude","--exclude",nargs='?', const="fortifyExcludes.txt",help="File: list of excludes (one per line)")
+	parser.add_argument("-verbose","--verbose",help="Turn on verbosity", action="store_true")
+	parser.add_argument("-url","--url",help="The url for the cloud scan controller")
+	parser.add_argument("-name","--name",help="Name of the project")
+	parser.add_argument("-quiet","--quiet",help="Name of the project")
+	parser.add_argument("-mem","--memory",help="Max memory to be used for translation (DEFAULT is 2G)")
+	parser.add_argument("-sscurl","--sscurl",help="URL of the SSC server (required if you choose the -upload option")
+	parser.add_argument("-sscuser","--sscuser",help="Username for the SSC server (required if you choose the -upload option")
+	parser.add_argument("-sscpass","--sscpass",help="Password for the SSC server (required if you choose the -upload option")
+	parser.add_argument("-sscproject","--sscproject",help="Exact(case sensitive) project name for the SSC server (required if you choose the -upload option")
+	parser.add_argument("-sscversion","--sscversion",help="Exact(case sensitive) version name for the SSC server (required if you choose the -upload option")
+	args=parser.parse_args()
+	
+	#INIT DATA object 
 	data = {}
 	data["isQuiet"] = False
 	data["hasExcludes"]=False
 	data["isVerbose"]=False
 	data["willUpload"]=False
+
+	#Enable Verbose Messaging
+	if args.verbose:
+		data["isVerbose"]=True
+
+	#Get location of source code
+	if args.source:
+		data["sourcePath"] = args.source
+		if not data["sourcePath"].endswith("/"):
+			data["sourcePath"] = data["sourcePath"] + "/"
+		if not os.path.isdir(data["sourcePath"]):
+			print data["sourcePath"] + " is not a valid source directory."
+			sys.exit()
+	else:
+		print "You must specify the location of your source code with -source"
+		sys.exit()
+
+
+	#Get the name of the build
+	if args.name:
+		data["buildName"] = args.name
+	else:
+		print "You must specify a build name with -name "
+		sys.exit()
+
+	#Check if we are sending our results to the SSC and/or scanning with the cloudscanner
 	if args.sscurl:
 		data["willUpload"] = True
 		if not args.sscurl or not args.sscuser or not args.sscpass or not args.sscproject or not args.sscversion:
@@ -46,41 +72,40 @@ def getArgs():
 		else:
 			data["controllerUrl"] = args.url
 
-	if args.verbose:
-		data["isVerbose"]=True
-	data["sourcePath"] = args.source
-	if not data["sourcePath"].endswith("/"):
-		data["sourcePath"] = data["sourcePath"] + "/"
-	if not os.path.isdir(data["sourcePath"]):
-		print data["sourcePath"] + " is not a valid source directory."
-		sys.exit()
-
+	#Set Java Max Memory 
 	if args.memory:
 		data["maxmem"] = args.memory
 	else:
 		data["maxmem"] = "2"
 	data["maxmem"] = "-Xmx"+data["maxmem"] + "G"
-	if args.name:
-		data["buildName"] = args.name
-	else:
-		print "You must specify a build name  with the -n or --name option"
-		sys.exit()
+
 
 	if args.exclude:
 		data["excludeFile"]=args.exclude
 		data["hasExcludes"]=True
-		try:
-			with open(str(data["excludeFile"]),"r") as EF:
-				content=EF.read()
-			data["excludeArray"] = content.split("\n")
-		#print excludeArray
-		except:
-			print "Could not open or read exclude file."
+		if os.path.isfile(str(data["sourcePath"]) +"fortifyExcludes.txt"):
+			if data["isVerbose"]:
+				print "[+] Found Default Excludes File"
+			try:
+				with open(str(data["sourcePath"])+"fortifyExcludes.txt","r") as EF:
+					content=EF.read()
+				data["excludeArray"] = content.split("\n")
+			except:
+				print "Could not open or read exclude file."
+		else:
+			try:
+				with open(str(data["excludeFile"]),"r") as EF:
+					content=EF.read()
+				data["excludeArray"] = content.split("\n")
+			#print excludeArray
+			except:
+				print "Could not open or read exclude file."
 	return data
 
 ##CLEAN THE BUILD
 def cleanBuild(data):
-	print "[+] CLEANING THE BUILD"
+	if data["isVerbose"]:
+		print "[+] CLEANING THE BUILD"
 	try:
 		out = check_output(["sourceanalyzer","-b",str(data["buildName"]),"-clean"])
 	except:
@@ -90,7 +115,8 @@ def cleanBuild(data):
 
 ##TRANSLATE THE BUILD 
 def translateBuild(data):
-	print "[+] TRANSLATING THE BUILD"
+	if data["isVerbose"]:
+		print "[+] TRANSLATING THE BUILD"
 	if data["hasExcludes"]:
 		command = ["sourceanalyzer","-b",data["buildName"],data["sourcePath"]]
 		x=""
@@ -101,13 +127,22 @@ def translateBuild(data):
 		command.append(data["maxmem"])
 		
 		try:
-			#print command
+			if data["isVerbose"]:
+				print "[+] SOURCE ANALYZER COMMAND"
+				for each in command:
+					print each + " " ,
+				print 
 			out = check_output(command)
 		except:
 			print "Could not translate build. Something is wrong 1"
 			sys.exit()
 	else: ##NO exceptions
 		command = ["sourceanalyzer","-b",data["buildName"],data["sourcePath"],data["maxmem"]]
+		if data["isVerbose"]:
+			print "[+] SOURCE ANALYZER COMMAND "
+			for each in command:
+				print each + " " ,
+			print 
 		try:
 			#print command
 			out = check_output(command)
@@ -116,31 +151,38 @@ def translateBuild(data):
 			sys.exit()
 
 	command = ["sourceanalyzer","-b",data["buildName"],"-show-files"]
-	print "Number of files : ",
-	try:
-		out = check_output(command)
-		y = out.split("\n")
-		i = 0 
-		for each in y:
-			i+=1
-		print str(i)
-	except:
-		print "[-] File Count Failed"
-	print "Lines of Code : ",
-	try:
-		command = ["sourceanalyzer","-b",data["buildName"],"-show-loc"]
-		out = check_output(command)
-		loc = out.split(": ")
-		print loc[1]
-	except:
-		print "[-] LOC count Failed"
+	if data["isVerbose"]:
+		print "Number of files : ",
+		try:
+			out = check_output(command)
+			y = out.split("\n")
+			i = 0 
+			for each in y:
+				i+=1
+			print str(i)
+		except:
+			print "[-] File Count Failed"
+		print "Lines of Code : ",
+		try:
+			command = ["sourceanalyzer","-b",data["buildName"],"-show-loc"]
+			out = check_output(command)
+			loc = out.split(": ")
+			print loc[1]
+		except:
+			print "[-] LOC count Failed"
 
 ## EXPORT BUILD SESSION 
 def exportBuild(data):
-	print "[+] EXPORTING BUILD SESSION"
+	if data["isVerbose"]:
+		print "[+] EXPORTING BUILD SESSION"
 	try:
 		mbs=data["buildName"].strip()+".mbs"
 		command = ["sourceanalyzer","-b",data["buildName"],"-export-build-session",mbs]
+		if data["isVerbose"]:
+			print "[+] SOURCE ANALYZER COMMAND "
+			for each in command:
+				print each + " " ,
+			print 
 		out = check_output(command)
 	except:
 		print "[-] Mobile Build Session Failed"
